@@ -30,4 +30,4 @@ func main() {
 
 ## License
 
-本项目采用MIT许可证，详情请见[LICENSE](./LICENCE)文件。
+本项目采用MIT许可证，详情请见[LICENSE](./LICENSE)文件。
