@@ -7,12 +7,12 @@ import (
 func main() {
 	spider := fspider.NewSpider()
 	// add current dir to watch list
-	err := spider.Watch("./")
+	err := spider.Spide("./")
 	if err != nil {
 		panic(err)
 	}
 	for v := range spider.FilesChanged() {
-		println(v)
+		println("file changed: ", v)
 	}
 	<-make(chan struct{})
 }

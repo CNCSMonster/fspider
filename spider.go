@@ -1,7 +1,6 @@
 package fspider
 
 import (
-	"context"
 	"log"
 	"os"
 	"sync"
@@ -19,90 +18,98 @@ const (
 
 type Spider struct {
 	*sync.Mutex
-	cancels map[string]context.CancelFunc
+	watcher *fsnotify.Watcher
 	output  chan string
 }
 
 func NewSpider() *Spider {
-	return &Spider{
-		Mutex:   &sync.Mutex{},
-		cancels: make(map[string]context.CancelFunc),
-		output:  make(chan string),
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		panic(err)
 	}
+	output := make(chan string)
+	s := &Spider{
+		Mutex:   &sync.Mutex{},
+		watcher: watcher,
+		output:  output,
+	}
+	go func(sender chan<- string) {
+		// process event
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+				var path string
+				if event.Op&fsnotify.Create == fsnotify.Create {
+					path = event.Name
+				}
+				if event.Op&fsnotify.Remove == fsnotify.Remove {
+					path = event.Name
+				}
+				if event.Op&fsnotify.Write == fsnotify.Write {
+					path = event.Name
+				}
+				if event.Op&fsnotify.Rename == fsnotify.Rename {
+					path = event.Name
+				}
+				if event.Op&fsnotify.Chmod == fsnotify.Chmod {
+					continue
+				}
+				// log.Println(path)
+				s.output <- path
+				if event.Op&fsnotify.Create == fsnotify.Create {
+					s.Spide(path)
+				}
+				if event.Op&fsnotify.Remove == fsnotify.Remove {
+					s.UnSpide(path)
+				}
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+				if err != nil {
+					log.Println("error:", err)
+				}
+			}
+		}
+	}(output)
+	return s
 }
 
 // use to watch a dir recursively
-func (s *Spider) Watch(path string) error {
+func (s *Spider) Spide(path string) error {
+	s.Lock()
+	defer s.Unlock()
+	if s.IsSpiderable(path) {
+		s.watcher.Add(path)
+		return nil
+	}
+	return nil
+}
+func (s *Spider) UnSpide(path string) error {
+	s.Lock()
+	defer s.Unlock()
+	if s.IsSpiderable(path) {
+		s.watcher.Remove(path)
+		return nil
+	}
+	return nil
+}
+
+// / to check if a dir is spiderable
+// if it has been spidered, return false
+func (s *Spider) IsSpiderable(path string) bool {
 	stat, err := os.Stat(path)
 	if err != nil {
-		return err
+		return false
 	}
-	s.Lock()
-	ctx, cancel := context.WithCancel(context.Background())
-	if stat.IsDir() {
-		go func(sender chan<- string, ctx context.Context) {
-			// use fsnotify to notify a directory
-			// Create new watcher.
-			watcher, err := fsnotify.NewWatcher()
-			if err != nil {
-				log.Fatal(err)
-			}
-			watcher.Add(path)
-			defer watcher.Close()
-			// process event
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case event := <-watcher.Events:
-					var path string
-					//log.Println("event:", event)
-					if event.Op&fsnotify.Create == fsnotify.Create {
-						path = event.Name
-						log.Println("create:", event.Name)
-					}
-					if event.Op&fsnotify.Remove == fsnotify.Remove {
-						path = event.Name
-						log.Println("remove:", event.Name)
-					}
-					if event.Op&fsnotify.Write == fsnotify.Write {
-						path = event.Name
-						log.Println("write:", event.Name)
-					}
-					if event.Op&fsnotify.Rename == fsnotify.Rename {
-						path = event.Name
-						log.Println("rename:", event.Name)
-					}
-					// if is dir, add to watcher if create, remove from watcher if remove
-					stat, err := os.Stat(path)
-					if err != nil {
-						log.Println(err)
-						continue
-					}
-					if stat.IsDir() {
-						if event.Op&fsnotify.Create == fsnotify.Create {
-							watcher.Add(path)
-						}
-						if event.Op&fsnotify.Remove == fsnotify.Remove {
-							s.Mutex.Lock()
-							watcher.Remove(path)
-							delete(s.cancels, path)
-							s.Mutex.Unlock()
-						}
-					}
-					s.output <- path
-				case err := <-watcher.Errors:
-					log.Println("error:", err)
-
-				}
-			}
-		}(s.output, ctx)
-	} else {
-		panic("not support file")
+	if !stat.IsDir() {
+		return false
 	}
-	s.cancels[path] = cancel
-	s.Unlock()
-	return nil
+	// TODO: if path has been spidered, return false
+	return true
 }
 
 func (s *Spider) FilesChanged() <-chan string {
@@ -110,10 +117,7 @@ func (s *Spider) FilesChanged() <-chan string {
 }
 func (s *Spider) Stop() {
 	s.Lock()
-	// 关闭所有输入协程
-	for _, cancel := range s.cancels {
-		cancel()
-	}
-	s.cancels = make(map[string]context.CancelFunc)
+	s.watcher.Close()
+	close(s.output)
 	s.Unlock()
 }
