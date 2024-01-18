@@ -85,6 +85,14 @@ func (s *Spider) Spide(path string) error {
 	defer s.Unlock()
 	path = filepath.Clean(path)
 	toSpide := []string{path}
+	stat, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if !stat.IsDir() {
+		s.files[path] = true
+		return nil
+	}
 	for len(toSpide) > 0 {
 		nextToSpide := []string{}
 		for _, p := range toSpide {
@@ -155,6 +163,24 @@ func (s *Spider) AllPaths() []string {
 		paths = append(paths, file)
 	}
 	return paths
+}
+func (s *Spider) AllFiles() []string {
+	s.RLock()
+	defer s.RUnlock()
+	files := make([]string, 0, len(s.files))
+	for file := range s.files {
+		files = append(files, file)
+	}
+	return files
+}
+func (s *Spider) AllDirs() []string {
+	s.RLock()
+	defer s.RUnlock()
+	dirs := make([]string, 0, len(s.dirs))
+	for dir := range s.dirs {
+		dirs = append(dirs, dir)
+	}
+	return dirs
 }
 
 // stop watching files, this method is thread safe
