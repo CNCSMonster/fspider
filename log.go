@@ -7,6 +7,10 @@ import (
 	"strings"
 )
 
+func init() {
+	fmt.Println("use log mod fspider")
+}
+
 func Log(arg ...any) {
 	fmt.Println(arg...)
 }
