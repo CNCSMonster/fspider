@@ -16,15 +16,13 @@ func Log(arg ...any) {
 }
 
 func (s *Spider) String() string {
-	s.RLock()
-	defer s.RUnlock()
 	sb := strings.Builder{}
 	sb.WriteString("files:\n")
-	for k, v := range s.files {
+	for k, v := range s.AllFiles() {
 		sb.WriteString(fmt.Sprintf("%s: %v\n", k, v))
 	}
 	sb.WriteString("dirs:\n")
-	for k, v := range s.dirs {
+	for k, v := range s.AllDirs() {
 		sb.WriteString(fmt.Sprintf("%s: %v\n", k, v))
 	}
 	return sb.String()

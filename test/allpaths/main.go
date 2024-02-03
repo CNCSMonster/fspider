@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/cncsmonster/fspider"
 )
@@ -14,11 +15,19 @@ func main() {
 		panic(err)
 	}
 	fmt.Println(spider.AllPaths())
-	for v := range spider.FilesChanged() {
-		println("file changed: ", v)
-		fmt.Println("all paths", spider.AllPaths())
-		fmt.Println("all files", spider.AllFiles())
-		fmt.Println("all dirs", spider.AllDirs())
-	}
-	<-make(chan struct{})
+	go func() {
+		for v := range spider.FilesChanged() {
+			log.Println("file changed: ", v)
+			// fmt.Println("all paths", spider.AllPaths())
+			fmt.Println("all files", spider.AllFiles())
+			fmt.Println("all dirs", spider.AllDirs())
+		}
+	}()
+	var input int
+	fmt.Scan(&input)
+	fmt.Println("all paths", spider.AllFiles())
+	fmt.Println("all dirs", spider.AllDirs())
+	fmt.Println("all files", spider.AllFiles())
+
+	spider.Stop()
 }
