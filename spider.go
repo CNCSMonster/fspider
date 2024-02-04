@@ -17,7 +17,25 @@ const (
 	FS_RENAME
 )
 
-type Spider struct {
+type Spider interface {
+	// use to watch a path
+	Spide(path string) error
+	// use to unwatch a path
+	UnSpide(path string) error
+	// return a channel that will receive all the files that have been changed(edited,or created), this method is thread safe
+	FilesChanged() <-chan string
+	// return all paths that are being watched, this method is thread safe
+	AllPaths() []string
+	// return all files that are being watched, this method is thread safe
+	AllFiles() []string
+	// return all dirs that are being watched, this method is thread safe
+	AllDirs() []string
+	// stop watching files,releasing all resources, this method is thread safe,
+	// this function must be called at the end of the life cycle
+	Stop()
+}
+
+type spiderImpl struct {
 	// 对于文件,每个文件准备一个带过滤通道的watcher,每个watcher只监控一个文件,
 	// 如果监控到某文件已经被删除,则删除该watcher
 	fileWatcher    *fsnotify.Watcher
@@ -31,7 +49,7 @@ type Spider struct {
 	outputMutex  *sync.RWMutex
 }
 
-func NewSpider() *Spider {
+func NewSpider() Spider {
 	Log("NewSpider")
 	dirWatcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -42,7 +60,7 @@ func NewSpider() *Spider {
 		panic(err)
 	}
 	internal := make(chan string)
-	s := &Spider{
+	s := &spiderImpl{
 		fileWatcher:    fileWatcher,
 		fileFilters:    make(map[string]PathSet),
 		fileFilterLock: &sync.RWMutex{},
@@ -120,7 +138,7 @@ func NewSpider() *Spider {
 }
 
 // use to watch a dir recursively,path can only be a dir
-func (s *Spider) Spide(path string) error {
+func (s *spiderImpl) Spide(path string) error {
 	Log("Spide", path)
 	if !s.isSpiderable(path) {
 		return errors.New("path is not spiderable")
@@ -135,7 +153,7 @@ func (s *Spider) Spide(path string) error {
 		return s.spiderFile(path)
 	}
 }
-func (s *Spider) spideDir(path string) error {
+func (s *spiderImpl) spideDir(path string) error {
 	return filepath.WalkDir(path, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -150,7 +168,7 @@ func (s *Spider) spideDir(path string) error {
 		}
 	})
 }
-func (s *Spider) spiderFile(path string) error {
+func (s *spiderImpl) spiderFile(path string) error {
 	Log("spiderFile", path)
 	dir := filepath.Dir(path)
 	dir = filepath.Clean(dir)
@@ -173,7 +191,7 @@ func (s *Spider) spiderFile(path string) error {
 }
 
 // use to unwatch a dir unrecursively,path can only be a dir
-func (s *Spider) UnSpide(path string) error {
+func (s *spiderImpl) UnSpide(path string) error {
 	path = filepath.Clean(path)
 	Log("UnSpide", path)
 	s.unspideDir(path)
@@ -181,11 +199,11 @@ func (s *Spider) UnSpide(path string) error {
 	return nil
 }
 
-func (s *Spider) unspideDir(path string) error {
+func (s *spiderImpl) unspideDir(path string) error {
 	s.dirWatcher.Remove(path)
 	return nil
 }
-func (s *Spider) unspiderFile(path string) error {
+func (s *spiderImpl) unspiderFile(path string) error {
 	dir := filepath.Dir(path)
 	dir = filepath.Clean(dir)
 	s.fileFilterLock.RLock()
@@ -199,7 +217,7 @@ func (s *Spider) unspiderFile(path string) error {
 // 理论上认为所有路径可以分为: 已经监控了的路径, 尚未监控但是可以监控的路径, 未监控也无法监控的特殊路径
 // 如果是 尚未监控但是可以监控的路径,则返回true,否则返回false
 // this functions is implemted time-costly, so it should be used carefully
-func (s *Spider) isSpiderable(path string) bool {
+func (s *spiderImpl) isSpiderable(path string) bool {
 	stat, err := os.Stat(path)
 	Log("isSpiderable", path, "err:", err)
 	if err != nil {
@@ -225,7 +243,7 @@ func (s *Spider) isSpiderable(path string) bool {
 }
 
 // return a channel that will receive all the files that have been changed(edited,or created), this method is thread safe
-func (s *Spider) FilesChanged() <-chan string {
+func (s *spiderImpl) FilesChanged() <-chan string {
 	s.outputMutex.Lock()
 	fileChanged := make(chan string)
 	s.outputs = append(s.outputs, fileChanged)
@@ -234,12 +252,12 @@ func (s *Spider) FilesChanged() <-chan string {
 }
 
 // return all paths that are being watched, this method is thread safe
-func (s *Spider) AllPaths() []string {
+func (s *spiderImpl) AllPaths() []string {
 	paths := s.AllDirs()
 	paths = append(paths, s.AllFiles()...)
 	return paths
 }
-func (s *Spider) AllFiles() []string {
+func (s *spiderImpl) AllFiles() []string {
 	// 清理掉已经被删除的文件
 	fDirs := s.fileWatcher.WatchList()
 	files := make([]string, 0)
@@ -262,12 +280,12 @@ func (s *Spider) AllFiles() []string {
 	}
 	return files
 }
-func (s *Spider) AllDirs() []string {
+func (s *spiderImpl) AllDirs() []string {
 	return s.dirWatcher.WatchList()
 }
 
 // stop watching files, this method is thread safe
-func (s *Spider) Stop() {
+func (s *spiderImpl) Stop() {
 	s.fileFilterLock.Lock()
 	s.dirWatcher.Close()
 	s.fileWatcher.Close()
