@@ -36,17 +36,13 @@ type Spider interface {
 }
 
 type spiderImpl struct {
-	// 对于文件,每个文件准备一个带过滤通道的watcher,每个watcher只监控一个文件,
-	// 如果监控到某文件已经被删除,则删除该watcher
 	fileWatcher    *fsnotify.Watcher
 	fileFilters    map[string]PathSet
 	fileFilterLock *sync.RWMutex
-	// 对于目录,用一个watcher监控所有
-	dirWatcher *fsnotify.Watcher
-	// 所有的文件关于internalChan进行
-	internalChan chan string
-	outputs      []chan string
-	outputMutex  *sync.RWMutex
+	dirWatcher     *fsnotify.Watcher
+	internalChan   chan string
+	outputs        []chan string
+	outputMutex    *sync.RWMutex
 }
 
 func NewSpider() Spider {
@@ -70,9 +66,6 @@ func NewSpider() Spider {
 		outputMutex:    &sync.RWMutex{},
 	}
 	process_event := func(event fsnotify.Event, ok bool, sender chan<- string, filter func(string) bool) {
-		if !ok {
-			return
-		}
 		var path string
 		if event.Op&fsnotify.Chmod == fsnotify.Chmod {
 			return
@@ -85,16 +78,22 @@ func NewSpider() Spider {
 			Log("process_event", "filter", path)
 			return
 		}
+		Log("process_event", "process", path)
 		sender <- path
 		if event.Op&fsnotify.Create == fsnotify.Create {
+			Log("process_event", "create", path)
 			s.Spide(path)
 		} else if event.Op&fsnotify.Remove == fsnotify.Remove {
+			Log("process_event", "remove", path)
 			s.UnSpide(path)
 		} else if event.Op&fsnotify.Rename == fsnotify.Rename {
+			Log("process_event", "rename", path)
 			s.UnSpide(path)
-		} else {
+		} else if event.Op&fsnotify.Write == fsnotify.Write {
 			// do nothing
 			Log("process_event", "do nothing", event.Op, path)
+		} else {
+			Log("process_event", "unknown event", event.Op, path)
 		}
 	}
 
@@ -103,6 +102,9 @@ func NewSpider() Spider {
 		for {
 			select {
 			case event, ok := <-dirWatcher.Events:
+				if !ok {
+					return
+				}
 				process_event(event, ok, sender, func(path string) bool {
 					s.fileFilterLock.RLock()
 					defer s.fileFilterLock.RUnlock()
@@ -111,10 +113,14 @@ func NewSpider() Spider {
 					return !ok || !pathSet.Contains(path)
 				})
 			case event, ok := <-fileWatcher.Events:
+				if !ok {
+					return
+				}
 				process_event(event, ok, sender, func(path string) bool {
 					s.fileFilterLock.RLock()
 					defer s.fileFilterLock.RUnlock()
 					dir := filepath.Clean(filepath.Dir(path))
+					path = filepath.Clean(path)
 					pathSet, ok := s.fileFilters[dir]
 					return ok && pathSet.Contains(path)
 				})

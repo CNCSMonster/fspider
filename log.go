@@ -15,7 +15,7 @@ func Log(arg ...any) {
 	fmt.Println(arg...)
 }
 
-func (s *Spider) String() string {
+func (s *spiderImpl) String() string {
 	sb := strings.Builder{}
 	sb.WriteString("files:\n")
 	for k, v := range s.AllFiles() {
