@@ -14,13 +14,16 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(spider.AllPaths())
+	stop := make(chan struct{})
 	go func() {
-		for v := range spider.FilesChanged() {
-			log.Println("file changed: ", v)
-			// fmt.Println("all paths", spider.AllPaths())
-			fmt.Println("all files", spider.AllFiles())
-			fmt.Println("all dirs", spider.AllDirs())
+		ChangedPath := spider.FilesChanged()
+		for {
+			select {
+			case path := <-ChangedPath:
+				log.Println("file changed:" + path)
+			case <-stop:
+				return
+			}
 		}
 	}()
 	var input int
@@ -28,6 +31,6 @@ func main() {
 	fmt.Println("all paths", spider.AllFiles())
 	fmt.Println("all dirs", spider.AllDirs())
 	fmt.Println("all files", spider.AllFiles())
-
+	stop <- struct{}{}
 	spider.Stop()
 }

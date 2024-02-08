@@ -1,4 +1,4 @@
-//go:build log
+//go:build !release
 
 package fspider
 
@@ -18,12 +18,12 @@ func Log(arg ...any) {
 func (s *spiderImpl) String() string {
 	sb := strings.Builder{}
 	sb.WriteString("files:\n")
-	for k, v := range s.AllFiles() {
-		sb.WriteString(fmt.Sprintf("%s: %v\n", k, v))
+	for _, v := range s.AllFiles() {
+		sb.WriteString(fmt.Sprintf("%v\n", v))
 	}
 	sb.WriteString("dirs:\n")
-	for k, v := range s.AllDirs() {
-		sb.WriteString(fmt.Sprintf("%s: %v\n", k, v))
+	for _, v := range s.AllDirs() {
+		sb.WriteString(fmt.Sprintf("%v\n", v))
 	}
 	return sb.String()
 }

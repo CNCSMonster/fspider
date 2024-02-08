@@ -36,13 +36,11 @@ type Spider interface {
 }
 
 type spiderImpl struct {
-	fileWatcher    *fsnotify.Watcher
-	fileFilters    map[string]PathSet
-	fileFilterLock *sync.RWMutex
-	dirWatcher     *fsnotify.Watcher
-	internalChan   chan string
-	outputs        []chan string
-	outputMutex    *sync.RWMutex
+	fileWatcher, dirWatcher      *fsnotify.Watcher
+	fileFilterLock, outputsMutex *sync.RWMutex
+	fileFilters                  map[string]PathSet
+	internalChan                 chan string
+	outputs                      []chan string
 }
 
 func NewSpider() Spider {
@@ -63,7 +61,7 @@ func NewSpider() Spider {
 		dirWatcher:     dirWatcher,
 		internalChan:   internal,
 		outputs:        make([]chan string, 0),
-		outputMutex:    &sync.RWMutex{},
+		outputsMutex:   &sync.RWMutex{},
 	}
 	process_event := func(event fsnotify.Event, ok bool, sender chan<- string, filter func(string) bool) {
 		var path string
@@ -133,11 +131,11 @@ func NewSpider() Spider {
 	}(internal)
 	go func(reciver <-chan string) {
 		for path := range reciver {
-			s.outputMutex.RLock()
+			s.outputsMutex.RLock()
 			for _, ch := range s.outputs {
 				ch <- path
 			}
-			s.outputMutex.RUnlock()
+			s.outputsMutex.RUnlock()
 		}
 	}(internal)
 	return s
@@ -250,10 +248,10 @@ func (s *spiderImpl) isSpiderable(path string) bool {
 
 // return a channel that will receive all the files that have been changed(edited,or created), this method is thread safe
 func (s *spiderImpl) FilesChanged() <-chan string {
-	s.outputMutex.Lock()
+	s.outputsMutex.Lock()
 	fileChanged := make(chan string)
 	s.outputs = append(s.outputs, fileChanged)
-	s.outputMutex.Unlock()
+	s.outputsMutex.Unlock()
 	return fileChanged
 }
 
@@ -271,7 +269,10 @@ func (s *spiderImpl) AllFiles() []string {
 		newFDirs := make([]string, len(fDirs))
 		for _, v := range fDirs {
 			if _, ok := s.fileFilters[v]; !ok {
-				s.fileWatcher.Remove(v)
+				err := s.fileWatcher.Remove(v)
+				if err != nil {
+					Log("AllFiles", "remove", v, "err:", err)
+				}
 			} else {
 				newFDirs = append(newFDirs, v)
 			}
