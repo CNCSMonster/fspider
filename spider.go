@@ -133,7 +133,10 @@ func NewSpider() Spider {
 		for path := range reciver {
 			s.outputsMutex.RLock()
 			for _, ch := range s.outputs {
-				ch <- path
+				select {
+				case ch <- path:
+				default:
+				}
 			}
 			s.outputsMutex.RUnlock()
 		}
